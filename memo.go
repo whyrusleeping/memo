@@ -46,6 +46,7 @@ func (m *Memoizer) Do(ctx context.Context, key string) (interface{}, error) {
 	res, err := m.work(ctx, key)
 	w.result = res
 	w.err = err
+	close(w.wait)
 
 	return res, err
 }
