@@ -12,10 +12,15 @@ func NewMemoizer(work func(context.Context, string) (interface{}, error)) *Memoi
 	}
 }
 
+func (m *Memoizer) SetConcurrencyLimit(n int) {
+	m.limiter = make(chan struct{}, n)
+}
+
 type Memoizer struct {
-	lk   sync.Mutex
-	memo map[string]*memoWaiter
-	work func(context.Context, string) (interface{}, error)
+	lk      sync.Mutex
+	memo    map[string]*memoWaiter
+	work    func(context.Context, string) (interface{}, error)
+	limiter chan struct{}
 }
 
 type memoWaiter struct {
@@ -25,6 +30,7 @@ type memoWaiter struct {
 }
 
 func (m *Memoizer) Do(ctx context.Context, key string) (interface{}, error) {
+
 	m.lk.Lock()
 	w, ok := m.memo[key]
 	if ok {
@@ -35,6 +41,19 @@ func (m *Memoizer) Do(ctx context.Context, key string) (interface{}, error) {
 		case <-w.wait:
 		}
 		return w.result, w.err
+	}
+
+	if m.limiter != nil {
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+
+		case m.limiter <- struct{}{}:
+		}
+
+		defer func() {
+			<-m.limiter
+		}()
 	}
 
 	w = &memoWaiter{
