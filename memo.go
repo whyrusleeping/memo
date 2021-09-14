@@ -3,6 +3,7 @@ package memo
 import (
 	"context"
 	"sync"
+	"sync/atomic"
 )
 
 func NewMemoizer(work func(context.Context, string) (interface{}, error)) *Memoizer {
@@ -21,12 +22,18 @@ type Memoizer struct {
 	memo    map[string]*memoWaiter
 	work    func(context.Context, string) (interface{}, error)
 	limiter chan struct{}
+
+	waiting int64
 }
 
 type memoWaiter struct {
 	wait   chan struct{}
 	result interface{}
 	err    error
+}
+
+func (m *Memoizer) Pending() int64 {
+	return atomic.LoadInt64(&m.waiting)
 }
 
 func (m *Memoizer) Do(ctx context.Context, key string) (interface{}, error) {
@@ -44,11 +51,13 @@ func (m *Memoizer) Do(ctx context.Context, key string) (interface{}, error) {
 	}
 
 	if m.limiter != nil {
+		atomic.AddInt64(&m.waiting, 1)
 		select {
 		case <-ctx.Done():
+			atomic.AddInt64(&m.waiting, -1)
 			return nil, ctx.Err()
-
 		case m.limiter <- struct{}{}:
+			atomic.AddInt64(&m.waiting, -1)
 		}
 
 		defer func() {
