@@ -6,7 +6,9 @@ import (
 	"sync/atomic"
 )
 
-func NewMemoizer(work func(context.Context, string) (interface{}, error)) *Memoizer {
+type WorkFunc func(context.Context, string, interface{}) (interface{}, error)
+
+func NewMemoizer(work WorkFunc) *Memoizer {
 	return &Memoizer{
 		memo: make(map[string]*memoWaiter),
 		work: work,
@@ -20,7 +22,7 @@ func (m *Memoizer) SetConcurrencyLimit(n int) {
 type Memoizer struct {
 	lk      sync.Mutex
 	memo    map[string]*memoWaiter
-	work    func(context.Context, string) (interface{}, error)
+	work    WorkFunc
 	limiter chan struct{}
 
 	waiting int64
@@ -36,7 +38,7 @@ func (m *Memoizer) Pending() int64 {
 	return atomic.LoadInt64(&m.waiting)
 }
 
-func (m *Memoizer) Do(ctx context.Context, key string) (interface{}, error) {
+func (m *Memoizer) Do(ctx context.Context, key string, arg interface{}) (interface{}, error) {
 
 	m.lk.Lock()
 	w, ok := m.memo[key]
@@ -71,7 +73,7 @@ func (m *Memoizer) Do(ctx context.Context, key string) (interface{}, error) {
 	m.memo[key] = w
 	m.lk.Unlock()
 
-	res, err := m.work(ctx, key)
+	res, err := m.work(ctx, key, arg)
 	w.result = res
 	w.err = err
 	close(w.wait)
