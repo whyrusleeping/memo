@@ -36,11 +36,9 @@ type cacheEntry struct {
 func (c *Cacher) Get(key string, ttl time.Duration, vf func() (interface{}, error)) (interface{}, error) {
 	c.lk.Lock()
 	ec, ok := c.cache[key]
-	if !ok || ec.val == nil {
-		if !ok {
-			ec = &cacheEntry{}
-			c.cache[key] = ec
-		}
+	if !ok {
+		ec = &cacheEntry{}
+		c.cache[key] = ec
 
 		// take the new cache entry lock while holding the cache lock, this is
 		// safe since we just created it
